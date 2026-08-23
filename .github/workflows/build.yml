@@ -1,0 +1,50 @@
+name: Build vcam .deb
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          curl -fsSL https://raw.githubusercontent.com/theos/ldid/master/install.sh | sudo sh
+
+      - name: Install dpkg-deb
+        run: |
+          brew install dpkg || brew install dpkg-dev
+
+      - name: Download iOS 16.5 SDK
+        run: |
+          mkdir -p "$THEOS/sdks"
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/theos-sdks
+          cd /tmp/theos-sdks
+          git sparse-checkout set iPhoneOS16.5.sdk
+          cp -R iPhoneOS16.5.sdk "$THEOS/sdks/iPhoneOS16.5.sdk"
+          ls -la "$THEOS/sdks"
+
+      - name: Build package
+        run: |
+          make clean package FINALPACKAGE=1
+          ls -la packages/
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcam-deb
+          path: packages/*.deb
+
+      - name: Create Release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*.deb
