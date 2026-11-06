@@ -1,9 +1,9 @@
-Package: com.yourcompany.vcam
-Name: vcam
-Version: 0.0.1
-Architecture: iphoneos-arm
-Description: An awesome MobileSubstrate tweak!
-Maintainer: Ethan Arbuckle
-Author: Ethan Arbuckle
+Package: dev.iosobs.vcam
+Name: OBS Camera Bridge
+Version: 0.1.2
+Architecture: iphoneos-arm64
+Description: Camera feed replacement from a local OBS scene on iOS 15.
+Maintainer: IOS OBS project
+Author: Ethan Arbuckle and contributors
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000)
+Depends: ellekit

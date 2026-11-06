@@ -1,4 +1,9 @@
 .theos/
 packages/
 .DS_Store
-*.py
+.venv/
+__pycache__/
+.captures/
+mac-app/node_modules/
+mac-app/dist/
+mac-app/build/icon.iconset/

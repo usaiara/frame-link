@@ -1,0 +1,28 @@
+{
+  "name": "frame-link",
+  "version": "0.1.2",
+  "private": true,
+  "author": "IOS OBS project",
+  "productName": "Frame Link",
+  "description": "OBS do computador como câmera do iPhone",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dir",
+    "dmg": "electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "dev.framelink.studio",
+    "mac": { "target": "dir", "category": "public.app-category.video", "icon": "build/icon.icns" },
+    "files": ["main.js", "preload.js", "index.html", "renderer.js", "styles.css"],
+    "extraResources": [
+      { "from": "backend.py", "to": "backend.py" },
+      { "from": "../obs_stream_server.py", "to": "obs_stream_server.py" },
+      { "from": "../packages", "to": "packages" }
+    ]
+  }
+}

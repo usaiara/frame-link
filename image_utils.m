@@ -12,23 +12,16 @@
 //       实时覆盖摄像头画面。适用于 Safari/相机/微信等所有 App。
 //    2) 本地模式（回退）：读取本地静态图片或视频文件。
 //
-//  OBS 服务器地址可在手机端运行时修改，无需重新编译：
-//      在手机路径 /var/mobile/.vcam_url.txt 写入一行：
-//          http://<PC的局域网IP>:8080/frame.jpg
-//      保存后 1~2 秒内自动生效（无需重启 mediaserverd）。
+//  Endereço do Mac usado nesta demonstração. Atualize e recompile se o IP mudar.
 // ============================================================
 
 // 本地替换媒体（静态图片或视频文件）—— 仅当网络帧不可用时作为回退
 static NSString *const kReplacementMediaPath = @"/tmp/test.png";
 
-// OBS 帧中继服务器默认地址（可用 /var/mobile/.vcam_url.txt 覆盖）
-static NSString *const kDefaultFrameURL = @"http://192.168.1.100:8080/frame.jpg";
+static NSString *const kFrameURL = @"http://192.168.1.10:8080/frame.jpg";
 
-// 运行时 URL 覆盖文件路径（手机端创建此文件即可修改服务器地址）
-static NSString *const kFrameURLConfigPath = @"/var/mobile/.vcam_url.txt";
-
-// 网络轮询间隔（秒）—— 约 6~7 帧/秒，满足摄像头预览/通话/录制
-static const NSTimeInterval kNetworkPollInterval = 0.15;
+// 网络轮询间隔（秒）—— 约 12 帧/秒，与中继的默认输出同步
+static const NSTimeInterval kNetworkPollInterval = 0.08;
 
 // 单帧下载超时（秒）
 static const NSTimeInterval kNetworkFetchTimeout = 4.0;
@@ -53,18 +46,8 @@ static CGImageRef networkImage = NULL;
 static BOOL networkThreadStarted = NO;
 static NSURLSession *networkSession = nil;
 
-// 读取当前生效的 OBS 帧 URL（优先 /var/mobile/.vcam_url.txt，否则用编译默认值）
 static NSString *effectiveFrameURL(void) {
-    NSString *content = [NSString stringWithContentsOfFile:kFrameURLConfigPath
-                                                  encoding:NSUTF8StringEncoding
-                                                     error:nil];
-    if (content) {
-        content = [content stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (content.length > 0) {
-            return content;
-        }
-    }
-    return kDefaultFrameURL;
+    return kFrameURL;
 }
 
 // 带超时地从 OBS 中继服务器下载一帧 JPEG（阻塞当前轮询线程）
@@ -105,23 +88,15 @@ static void networkPollLoop(void) {
             @autoreleasepool {
                 NSString *urlString = effectiveFrameURL();
                 NSURL *url = (urlString.length > 0) ? [NSURL URLWithString:urlString] : nil;
-                if (url) {
-                    NSData *data = downloadFrame(url);
-                    if (data) {
-                        UIImage *img = [UIImage imageWithData:data];
-                        if (img && img.CGImage) {
-                            CGImageRef newRef = CGImageRetain(img.CGImage);
-                            CGImageRef oldRef = NULL;
-                            [networkLock lock];
-                            oldRef = networkImage;
-                            networkImage = newRef;
-                            [networkLock unlock];
-                            if (oldRef) {
-                                CGImageRelease(oldRef);
-                            }
-                            currentMode = VCamModeNetwork;
-                        }
-                    }
+                NSData *data = url ? downloadFrame(url) : nil;
+                UIImage *img = data ? [UIImage imageWithData:data] : nil;
+                CGImageRef newRef = img.CGImage ? CGImageRetain(img.CGImage) : NULL;
+                [networkLock lock];
+                CGImageRef oldRef = networkImage;
+                networkImage = newRef;
+                [networkLock unlock];
+                if (oldRef) {
+                    CGImageRelease(oldRef);
                 }
                 [NSThread sleepForTimeInterval:kNetworkPollInterval];
             }
@@ -258,7 +233,9 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
 
         CGFloat scaleX = targetWidth / replacementExtent.size.width;
         CGFloat scaleY = targetHeight / replacementExtent.size.height;
-        CGFloat scale = MIN(scaleX, scaleY);
+        // Preenche o quadro inteiro: a imagem horizontal do OBS é cortada
+        // nas laterais ao ser usada como câmera vertical.
+        CGFloat scale = MAX(scaleX, scaleY);
 
         CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
         CIImage *scaledImage = [replacementCIImage imageByApplyingTransform:transform];
@@ -267,7 +244,8 @@ void drawReplacementOntoBuffer(CVPixelBufferRef targetBuffer) {
         CGFloat offsetX = (targetWidth - scaledExtent.size.width) / 2.0;
         CGFloat offsetY = (targetHeight - scaledExtent.size.height) / 2.0;
         CGAffineTransform translationTransform = CGAffineTransformMakeTranslation(offsetX, offsetY);
-        CIImage *finalImage = [scaledImage imageByApplyingTransform:translationTransform];
+        CIImage *finalImage = [[scaledImage imageByApplyingTransform:translationTransform]
+            imageByCroppingToRect:CGRectMake(0, 0, targetWidth, targetHeight)];
 
         if (sharedCIContext) {
             [sharedCIContext render:finalImage toCVPixelBuffer:targetBuffer];

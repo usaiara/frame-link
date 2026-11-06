@@ -1,4 +1,4 @@
-name: Build vcam .deb
+name: Build Frame Link tweak
 
 on:
   push:

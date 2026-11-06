@@ -1,96 +1,60 @@
-# VirtualCamera (vcam)
+# Frame/Link
 
-iOS tweak：把摄像头的画面替换为**任意图片 / 视频 / 来自 OBS 的实时直播流**。
-通过钩住 `mediaserverd`（负责连接摄像头硬件并向前端 App 转发图像数据）实现，
-**无需在目标 App 里注入**，系统级生效 —— Safari / 相机 / 微信 / 视频会议等所有 App 都会显示替换后的画面。
+Protótipo acadêmico de câmera virtual para iPhone com jailbreak **rootless**. O tweak substitui os quadros de vídeo entregues por `mediaserverd` por imagens de uma cena do OBS. O código do tweak deriva de [EthanArbuckle/vcam-ios](https://github.com/EthanArbuckle/vcam-ios) e do [fork de axm535958](https://github.com/axm535958/vcam-ios). Este projeto acrescenta o painel Frame/Link para macOS, a ponte de transmissão e a limpeza do quadro remoto quando a conexão cai.
 
-已在 iOS 15 - 17 上测试。
+## Painel do Mac (Electron)
 
-> 原版：https://github.com/EthanArbuckle/vcam-ios
-> 本分支增强：新增 **OBS 网络实时拉帧模式**（配合 PC 端 `obs_stream_server.py`），
-> 可将 OBS 输出实时推到 iPhone，替换手机摄像头。
+O aplicativo em `mac-app/` mostra a prévia ao vivo, detecta o iPhone por USB, lista os aplicativos instalados, troca a cena de programa do OBS, inicia ou para a ponte, instala ou remove o tweak e captura a tela do iPhone. A seleção de um aplicativo serve para organizar o teste: **a substituição da câmera é global** e nenhum código é injetado nos apps.
 
-## 画面来源（优先级从高到低）
+O instalador macOS Apple Silicon e o pacote do tweak estão disponíveis nos lançamentos do projeto. Neste Mac, o aplicativo pronto está em `/Applications/Frame Link.app`. Para desenvolver ou gerar outro pacote:
 
-1. **网络模式（OBS 直播帧）**：定时从 PC 端 HTTP 服务拉取最新 JPEG 帧，实时覆盖摄像头画面。
-2. **本地静态图片**（`/tmp/test.png`）：回退方案。
-3. **本地视频文件**（如 `/tmp/test.mp4`）：回退方案，仅取前 60 帧循环。
-
-## 使用步骤（OBS 直播推到 iPhone）
-
-### 第 1 步：PC 端（Windows）启动 OBS 帧中继
-
-1. 打开 OBS，`工具` → `WebSocket 服务器设置`，开启 WebSocket 服务器，记下端口与密码。
-2. 在 OBS 里添加一个视频源（如 `显示器采集` / `窗口采集` / `视频采集设备`），并切换到该场景。
-3. 启动中继脚本（需 Python3 + `websocket-client`）：
-
-   ```bash
-   pip install websocket-client
-   python obs_stream_server.py --source "显示器采集" --fps 12 --port 8080
-   ```
-
-   默认连接 `ws://127.0.0.1:4455`，密码、端口、分辨率都可用命令行参数覆盖：
-
-   ```bash
-   python obs_stream_server.py --obs-url ws://127.0.0.1:4455 --password 你的密码 --port 8080 --fps 12 --width 1280 --height 720
-   ```
-
-4. 浏览器访问 `http://127.0.0.1:8080/frame.jpg` 应能看到当前 OBS 画面（会不断刷新）。
-   记下电脑的局域网 IP（如 `192.168.1.100`），手机和电脑需在同一 WiFi。
-
-### 第 2 步：手机端配置服务器地址
-
-安装本 tweak 后，在手机 `/var/mobile/.vcam_url.txt` 写入一行：
-
-```
-http://192.168.1.100:8080/frame.jpg
+```sh
+cd mac-app
+npm install
+npm start
+npm run dist
+npm run dmg
 ```
 
-（把 IP 换成你电脑的局域网 IP。文件保存后 1~2 秒自动生效，无需重启。）
+O painel usa Python, Frida, FFmpeg e `idevicescreenshot` instalados no Mac. O iPhone deve estar desbloqueado, conectado por USB e com jailbreak/Frida ativos. Ao abrir o app, a ponte inicia automaticamente com a fonte de vídeo salva. O pacote `.deb` mais recente da pasta `packages/` é usado na instalação via USB. Na primeira execução local, as dependências Python podem ser instaladas com `python3 -m pip install --user -r requirements.txt`. O `.dmg` gerado é para macOS Apple Silicon e não tem assinatura Developer ID; em outro Mac, o sistema pode exigir aprovação manual na primeira abertura.
 
-### 第 3 步：验证
+Na aba **Controle → Servidor OBS**, escolha **WebSocket** para controlar cenas do OBS no Mac ou em outro computador, ou **Fluxo RTMP** para receber uma transmissão já publicada por um servidor RTMP. Para um Windows na mesma rede, use o IP LAN dele; `127.0.0.1` sempre significa o próprio computador onde o endereço é usado. No modo RTMP, o Mac precisa ter FFmpeg instalado (`brew install ffmpeg`). O servidor RTMP precisa aceitar conexões de leitura de outros computadores, e a URL de leitura pode incluir uma chave de transmissão além do caminho do servidor. O Mac continua servindo `http://<IP-do-Mac>:8080/frame.jpg` ao iPhone nos dois modos.
 
-打开任意用到摄像头的 App（Safari 的 `getUserMedia` 页面、相机、微信视频），
-画面应显示为 OBS 的实时输出。
+Para enviar **diretamente do OBS do Windows ao Mac**, escolha **Receber RTMP do Windows neste Mac**. No Windows, abra **Configurações → Transmissão**, selecione o serviço **Personalizado** e copie do painel o **Servidor** (`rtmp://192.168.1.10:1935/camswap` nesta rede) e a **Chave de transmissão** (`live`). Clique em **Iniciar transmissão** no OBS. O Mac escuta na porta TCP 1935 e transforma os quadros recebidos em JPEG para o tweak do iPhone. Essa opção evita depender de um servidor RTMP no Windows.
 
-> 若手机拉不到 PC 画面：先用手机浏览器访问 `http://192.168.1.100:8080/frame.jpg` 确认网络通；
-> 检查 Windows 防火墙是否放行 8080 端口（允许 Python 通过专用网络）。
+## 1. OBS no Mac
 
-## 构建
+Crie uma cena com sua webcam. Em **Ferramentas → Configurações do servidor WebSocket**, ative o servidor. A porta padrão é `4455`. No macOS, o programa lê a senha da configuração local do OBS; o endereço HTTP criado abaixo é o que o iPhone acessa.
 
-需要 macOS 或 Linux + [Theos](https://theos.dev)，并准备 iOS 16.5 SDK：
-
-```bash
-./build.sh          # 会自动安装 Theos 与 SDK
-# 或
-make clean package FINALPACKAGE=1
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python obs_stream_server.py
 ```
 
-产物在 `packages/*.deb`（rootless 布局，适用于 Dopamine / palera1n 等 rootless 越狱）。
+O programa captura a cena **ao vivo** em JPEG a 960 pixels, 12 FPS e qualidade 85. Para uma cena específica, acrescente `--source 'Nome da cena'`. Abra `http://127.0.0.1:8080/` no Mac: a página mostra a cena ao vivo. Neste Mac, o IP local encontrado foi `192.168.1.10`; confirme se ele continua igual antes de apresentar. Mac e iPhone precisam estar na mesma rede.
 
-也可以推送到 GitHub（本仓库已配置 `.github/workflows/build.yml`），
-由 GitHub Actions 在 macOS 上自动构建并产出 .deb 工件。
+## 2. Tweak no iPhone
 
-## 安装
+O pacote atual é para **iOS 15, arm64 e jailbreak rootless**, como o iPhone 6s Plus. Requer [Theos](https://theos.dev/docs/installation-macos), SDK iOS 16.5 e um carregador de tweaks no aparelho. Para compilar no Mac:
 
-将 `packages/*.deb` 传到手机（scp / AirDrop / Sileo 本地安装），然后：
-
-```bash
-dpkg -i vcam_0.0.1_iphoneos-arm64.deb
-killall -9 mediaserverd   # 或 重启/respring 使其生效
+```sh
+export THEOS="$HOME/theos"
+./build.sh
 ```
 
-## 截图
+Instale o arquivo `.deb` gerado em `packages/` pelo Sileo. O endereço do Mac está definido em `image_utils.m` para a demonstração:
 
-**image file**
+```text
+http://192.168.1.10:8080/frame.jpg
+```
 
-<img src=".imgs/image.png" width="50%">
+Se o IP do Mac mudar, altere essa constante e recompile o pacote. Abra esse mesmo endereço no Safari do iPhone antes de testar a câmera. O `mediaserverd` no iOS 15.8.8 não conseguiu ler o arquivo `/var/mobile/.vcam_url.txt`; por isso, este protótipo usa o endereço incluído no binário. Se o servidor parar ou um quadro falhar, o último quadro remoto é descartado e a câmera física volta a aparecer.
 
-**video file**
+## Limites atuais
 
-<img src=".imgs/video.gif" width="50%">
-
-## 已知限制（POC）
-
-- 内存管理较粗糙，`mediaserverd` 长时间运行可能被系统清理（每 ~30s 曾出现过泄漏）。
-- 网络模式为「拉取最新帧」实现，帧率受 `obs_stream_server.py` 的 `--fps` 与手机端轮询间隔（0.15s）双重限制。
+- Transmite **somente vídeo**. O microfone do iPhone continua sendo usado.
+- 12 FPS melhora a fluidez da prova de conceito, mas ainda não equivale a uma câmera de 30 FPS.
+- O hook em `mediaserverd` é experimental e pode variar entre versões do iOS. Teste primeiro no app Câmera; Discord ainda precisa de teste no aparelho.
+- O servidor HTTP não tem autenticação; use uma rede local confiável e encerre o processo após a demonstração.
+- O código herdado contém suporte incompleto a vídeo local. A demonstração principal usa os quadros do OBS.
