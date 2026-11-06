@@ -134,13 +134,15 @@ def status():
             "id": device.id,
             "os": params.get("os", {}).get("version", "iOS"),
             "jailbreakReady": True,
+            "tweakInstalled": None,
+            "tweakVersion": None,
         }
-        package_version = run_on_phone(
-            device, "/var/jb/usr/bin/dpkg-query",
-            ["dpkg-query", "-W", "-f=${Version}\\n", PACKAGE], timeout=8,
-        ).strip()
-        version_match = re.search(r"\d+(?:\.\d+)+", package_version.splitlines()[0] if package_version else "")
-        result["phone"]["tweakVersion"] = version_match.group(0) if version_match else None
+        try:
+            version = query_tweak_version(device)
+            result["phone"]["tweakVersion"] = version
+            result["phone"]["tweakInstalled"] = version is not None
+        except Exception as exc:
+            result["phone"]["tweakError"] = str(exc)
     except Exception as exc:
         result["phoneError"] = str(exc)
     try:
@@ -298,6 +300,15 @@ def run_on_phone(device, path, argv, timeout=35):
         device.off("output", on_output)
 
 
+def query_tweak_version(device):
+    output = run_on_phone(
+        device, "/var/jb/usr/bin/dpkg-query",
+        ["dpkg-query", "-W", "-f=${Status}|${Version}\\n", PACKAGE], timeout=8,
+    ).strip()
+    match = re.search(r"install ok installed\|(\d+(?:\.\d+)+)", output)
+    return match.group(1) if match else None
+
+
 def transfer_deb(device, local_path):
     remote_path = "/var/mobile/Library/Caches/obs-iphone-studio.deb"
     payload = local_path.read_bytes()
@@ -361,7 +372,10 @@ def install():
     if "Setting up" not in output and "Configurando" not in output:
         raise RuntimeError(output.strip() or "dpkg não confirmou a instalação")
     run_on_phone(device, "/var/jb/usr/bin/killall", ["killall", "-9", "mediaserverd"], timeout=10)
-    return {"installed": True, "package": deb.name, "log": output.strip()}
+    version = query_tweak_version(device)
+    if version is None:
+        raise RuntimeError("A instalação não apareceu no banco de pacotes do iPhone")
+    return {"installed": True, "version": version, "package": deb.name, "log": output.strip()}
 
 
 def uninstall():
@@ -370,6 +384,8 @@ def uninstall():
     if "Removing" not in output and "Removendo" not in output:
         raise RuntimeError(output.strip() or "dpkg não confirmou a remoção")
     run_on_phone(device, "/var/jb/usr/bin/killall", ["killall", "-9", "mediaserverd"], timeout=10)
+    if query_tweak_version(device) is not None:
+        raise RuntimeError("O pacote ainda consta como instalado no iPhone")
     return {"installed": False, "log": output.strip()}
 
 

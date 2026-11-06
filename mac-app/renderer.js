@@ -54,17 +54,69 @@ async function api(route, method = 'GET', data) {
 
 async function action(route, message, data) {
   const buttons = [...document.querySelectorAll('button')];
+  const previousDisabled = buttons.map(button => button.disabled);
   buttons.forEach(button => button.disabled = true);
   try {
     const result = await api(route, 'POST', data);
+    if (route.startsWith('/tweak/') && currentStatus?.phone) {
+      renderStatus({
+        ...currentStatus,
+        phone: {
+          ...currentStatus.phone,
+          tweakInstalled: result.installed,
+          tweakVersion: result.version || null,
+          tweakError: null,
+        },
+      });
+    }
     toast(message);
     await refresh();
     return result;
   } catch (error) {
     toast(error.message || String(error), true);
   } finally {
-    buttons.forEach(button => button.disabled = false);
+    buttons.forEach((button, index) => button.disabled = previousDisabled[index]);
+    renderTweakStatus(currentStatus);
   }
+}
+
+function renderTweakStatus(state) {
+  const phone = state?.phone;
+  const installed = phone?.tweakInstalled;
+  const canInstall = !!phone && installed === false;
+  const canRemove = !!phone && installed === true;
+  for (const id of ['installTop', 'installQuick', 'installSetting']) $(id).disabled = !canInstall;
+  $('removeSetting').disabled = !canRemove;
+  $('installTop').textContent = canRemove ? '✓  Tweak ativado' : '↧  Ativar tweak';
+  $('installQuick').textContent = canRemove ? 'Ativado' : 'Ativar';
+  $('installSetting').textContent = canRemove ? 'Ativado' : 'Ativar';
+
+  let title, detail, footer;
+  if (!phone) {
+    title = 'iPhone desconectado';
+    detail = 'Conecte o cabo USB para consultar o tweak.';
+    footer = 'USB desconectado';
+  } else if (installed === true) {
+    title = `Tweak instalado${phone.tweakVersion ? ` · v${phone.tweakVersion}` : ''}`;
+    detail = 'Pacote encontrado no iPhone. A substituição da câmera está disponível.';
+    footer = 'Instalado · iOS 15 · rootless';
+  } else if (installed === false) {
+    title = 'Tweak removido';
+    detail = 'O pacote não está instalado. Use Ativar para restaurar a câmera virtual.';
+    footer = 'Não instalado no iPhone';
+  } else {
+    title = 'Estado não verificado';
+    detail = phone.tweakError || 'Aguardando resposta do iPhone.';
+    footer = 'Verificação indisponível';
+  }
+  $('tweakStateTitle').textContent = title;
+  $('tweakStateDetail').textContent = detail;
+  $('tweakQuickState').textContent = title;
+  $('tweakFooterText').textContent = footer;
+  dot('tweakStateDot', installed === true);
+  dot('tweakFooterDot', installed === true);
+  $('tweakState').classList.toggle('installed', installed === true);
+  $('tweakState').classList.toggle('removed', installed === false);
 }
 
 function populateScenes(scenes, active, mode) {
@@ -95,6 +147,7 @@ function renderStatus(state) {
   const hadPhone = !!currentStatus?.phone;
   currentStatus = state;
   const connected = !!state.phone;
+  const tweakInstalled = state.phone?.tweakInstalled === true;
   const obs = !!state.obs.connected;
   const bridge = !!state.bridgeRunning;
   const live = !!state.frameReady;
@@ -110,7 +163,7 @@ function renderStatus(state) {
   } else if (!hadPhone) {
     loadApps();
   }
-  $('installQuick').textContent = connected && state.phone.tweakVersion ? 'Atualizar' : 'Instalar';
+  renderTweakStatus(state);
   dot('phoneDot', connected);
   $('obsName').textContent = state.obsMode === 'rtmp_push' ? (obs ? 'Windows ao vivo' : 'Aguardando Windows') : state.obsMode === 'rtmp' ? (obs ? 'RTMP ativo' : 'RTMP sem sinal') : (obs ? 'Conectado' : 'Desconectado');
   $('obsDetail').textContent = state.obsMode === 'rtmp_push' ? state.rtmpPublishServer : state.obsMode === 'rtmp' ? (state.sourceError || state.rtmpUrl || 'Configure a URL RTMP') : (obs ? `${state.obsHost} · ${state.obs.active || 'Sem cena'}` : `Servidor ${state.obsHost}:${state.obsPort}`);
@@ -118,8 +171,8 @@ function renderStatus(state) {
   $('bridgeName').textContent = live ? 'Ao vivo' : bridge ? 'Sem quadros' : 'Desligada';
   $('bridgeDetail').textContent = bridge ? 'Porta 8080 ativa' : 'Pronta para iniciar';
   dot('bridgeDot', live);
-  $('topStatus').textContent = connected && obs && live ? 'Tudo conectado' : 'Aguardando conexões';
-  document.querySelector('.clock-dot').classList.toggle('on', connected && obs && live);
+  $('topStatus').textContent = !connected ? 'iPhone desconectado' : state.phone.tweakInstalled === false ? 'Tweak desativado' : tweakInstalled && obs && live ? 'Tudo conectado' : 'Aguardando conexões';
+  document.querySelector('.clock-dot').classList.toggle('on', tweakInstalled && obs && live);
   $('macAddress').textContent = state.macIp;
   $('endpoint').textContent = `http://${state.macIp}:8080/frame.jpg`;
   $('bridgeSwitch').classList.toggle('on', bridge);
@@ -131,8 +184,8 @@ function renderStatus(state) {
   document.querySelector('.preview-empty small').textContent = state.obsMode === 'rtmp_push' ? 'No OBS do Windows, clique em Iniciar transmissão' : 'Inicie a ponte e confirme a fonte de vídeo';
   document.querySelector('.control-card p').textContent = state.obsMode === 'rtmp_push' ? 'O Mac está pronto para receber o OBS do Windows.' : 'Escolha a cena e controle o envio para o iPhone.';
   document.querySelector('label[for="scene"]').textContent = state.obsMode === 'rtmp_push' ? 'FONTE ATIVA' : 'CENA ATIVA NO OBS';
-  document.querySelector('.route-check').classList.toggle('off', !live);
-  document.querySelector('.route-check').textContent = live ? '✓' : '…';
+  document.querySelector('.route-check').classList.toggle('off', !(live && tweakInstalled));
+  document.querySelector('.route-check').textContent = live && tweakInstalled ? '✓' : '…';
   dot('bridgeSettingsDot', live);
   $('obsSettingsState').textContent = state.obsMode === 'rtmp_push' ? (obs ? 'Vídeo chegando do Windows' : 'Aguardando Iniciar transmissão no Windows') : state.obsMode === 'rtmp' ? (obs ? 'Fluxo RTMP recebendo vídeo' : (state.sourceError || 'Aguardando fluxo RTMP')) : (obs ? `WebSocket conectado · ${state.obsHost}:${state.obsPort}` : `Sem conexão com ${state.obsHost}:${state.obsPort}`);
   dot('obsSettingsDot', obs);
@@ -154,7 +207,7 @@ function renderStatus(state) {
     toast(`O IP do Mac mudou para ${state.macIp}. O tweak ainda usa ${state.configuredIp}; recompile antes do teste.`, true);
   }
   $('previewDot').classList.toggle('on', live);
-  $('previewText').textContent = live ? 'Sinal sincronizado com o OBS' : state.obsMode === 'rtmp_push' ? 'Aguardando transmissão do Windows' : 'Aguardando quadros do OBS';
+  $('previewText').textContent = live ? (tweakInstalled ? 'Sinal sincronizado com o OBS' : 'OBS ao vivo; ative o tweak no iPhone') : state.obsMode === 'rtmp_push' ? 'Aguardando transmissão do Windows' : 'Aguardando quadros do OBS';
 }
 
 function showInputMode() {
@@ -279,5 +332,5 @@ $('refreshApps').addEventListener('click', loadApps);
 $('appSearch').addEventListener('input', renderApps);
 
 setTimeout(refresh, 500);
-setInterval(refresh, 10000);
+setInterval(refresh, 5000);
 setInterval(updatePreview, 500);

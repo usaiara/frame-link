@@ -4,7 +4,7 @@ Protótipo acadêmico de câmera virtual para iPhone com jailbreak **rootless**.
 
 ## Painel do Mac (Electron)
 
-O aplicativo em `mac-app/` mostra a prévia ao vivo, detecta o iPhone por USB, lista os aplicativos instalados, troca a cena de programa do OBS, inicia ou para a ponte, instala ou remove o tweak e captura a tela do iPhone. A seleção de um aplicativo serve para organizar o teste: **a substituição da câmera é global** e nenhum código é injetado nos apps.
+O aplicativo em `mac-app/` mostra a prévia ao vivo, detecta o iPhone por USB, lista os aplicativos instalados, troca a cena de programa do OBS, inicia ou para a ponte, instala ou remove o tweak e captura a tela do iPhone. O painel consulta o banco de pacotes do iPhone periodicamente: exibe **instalado**, **removido**, **desconectado** ou **não verificado** e habilita apenas a ação cabível. A seleção de um aplicativo serve para organizar o teste: **a substituição da câmera é global** e nenhum código é injetado nos apps.
 
 O instalador macOS Apple Silicon e o pacote do tweak estão disponíveis nos lançamentos do projeto. Neste Mac, o aplicativo pronto está em `/Applications/Frame Link.app`. Para desenvolver ou gerar outro pacote:
 
